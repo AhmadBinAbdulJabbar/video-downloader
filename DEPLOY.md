@@ -12,7 +12,7 @@ git commit -m "Initial commit: Video downloader for YouTube and Facebook"
 git branch -M main
 
 # Add your GitHub repo as remote
-git remote add origin https://github.com/ahmadbinabduljabbar/youtube-downloader.git
+git remote add origin https://github.com/AhmadBinAbdulJabbar/video-downloader.git
 git push -u origin main
 ```
 
@@ -63,3 +63,4 @@ Currently not needed, but available for future use.
 **yt-dlp errors?**
 - Some videos may be region-restricted or unavailable
 - Check browser console (F12) for error details
+- If you see "No supported JavaScript runtime could be found", redeploy after updating dependencies so Render installs the latest `yt-dlp`. The backend now includes YouTube fallback extractor flags for runtime-limited environments.

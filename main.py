@@ -53,20 +53,61 @@ def run_yt_dlp(args: list[str]) -> tuple[str, str, int]:
     return result.stdout, result.stderr, result.returncode
 
 
+def run_yt_dlp_with_fallback(platform: str | None, base_args: list[str], url: str) -> tuple[str, str, int]:
+    attempts: list[list[str]] = []
+
+    if platform == "youtube":
+        # Use non-JS player clients first to reduce runtime issues on hosted environments.
+        attempts.append(base_args + [
+            "--extractor-args", "youtube:player_client=android",
+            "--extractor-args", "youtube:player_skip=js",
+            url,
+        ])
+        # If a runtime is available, allow yt-dlp to use it as a fallback.
+        attempts.append(base_args + [
+            "--js-runtimes", "deno,node",
+            url,
+        ])
+
+    attempts.append(base_args + [url])
+
+    last_result = ("", "", 1)
+    for args in attempts:
+        stdout, stderr, code = run_yt_dlp(args)
+        last_result = (stdout, stderr, code)
+        if code == 0 and stdout.strip():
+            return stdout, stderr, code
+
+    return last_result
+
+
+def clean_yt_dlp_error(stderr: str) -> str:
+    ignored_prefixes = (
+        "WARNING: [youtube] No supported JavaScript runtime could be found.",
+    )
+    lines = [
+        line.strip()
+        for line in stderr.splitlines()
+        if line.strip() and not line.strip().startswith(ignored_prefixes)
+    ]
+    if not lines:
+        return "yt-dlp failed with no detailed error message"
+    return lines[-1]
+
+
 @app.post("/api/info")
 async def get_video_info(req: VideoRequest):
     platform = detect_platform(req.url)
     if not platform:
         raise HTTPException(400, "Unsupported URL. Paste a YouTube or Facebook video/reel link.")
 
-    stdout, stderr, code = run_yt_dlp([
+    stdout, stderr, code = run_yt_dlp_with_fallback(platform, [
         "--dump-json",
         "--no-playlist",
-        req.url,
-    ])
+    ], req.url)
 
     if code != 0:
-        raise HTTPException(400, f"Could not fetch video info: {stderr[:300]}")
+        raise HTTPException(400, f"Could not fetch video info: {clean_yt_dlp_error(stderr)}")
 
     try:
         data = json.loads(stdout)
@@ -135,7 +176,8 @@ async def get_video_info(req: VideoRequest):
 
 @app.get("/api/download")
 async def download_video(url: str, format_id: str, title: str = "video", ext: str = "mp4"):
-    if not detect_platform(url):
+    platform = detect_platform(url)
+    if not platform:
         raise HTTPException(400, "Unsupported URL")
 
     safe_title = re.sub(r'[^\w\s-]', '', title)[:60].strip()
@@ -150,7 +192,6 @@ async def download_video(url: str, format_id: str, title: str = "video", ext: st
             "--audio-quality", "0",
             "-o", str(output_path),
             "--no-playlist",
-            url,
         ]
         final_ext = "mp3"
     else:
@@ -159,7 +200,6 @@ async def download_video(url: str, format_id: str, title: str = "video", ext: st
             "--merge-output-format", "mp4",
             "-o", str(output_path),
             "--no-playlist",
-            url,
         ]
         # Simpler: use the format_id directly
         args = [
@@ -167,14 +207,13 @@ async def download_video(url: str, format_id: str, title: str = "video", ext: st
             "--merge-output-format", "mp4",
             "-o", str(output_path),
             "--no-playlist",
-            url,
         ]
         final_ext = "mp4"
 
-    stdout, stderr, code = run_yt_dlp(args)
+    stdout, stderr, code = run_yt_dlp_with_fallback(platform, args, url)
 
     if code != 0:
-        raise HTTPException(500, f"Download failed: {stderr[:300]}")
+        raise HTTPException(500, f"Download failed: {clean_yt_dlp_error(stderr)}")
 
     # Find the actual file
     pattern = str(DOWNLOAD_DIR / f"{safe_title}.*")
