@@ -12,7 +12,7 @@ git commit -m "Initial commit: Video downloader for YouTube and Facebook"
 git branch -M main
 
 # Add your GitHub repo as remote
-git remote add origin https://github.com/YOUR_USERNAME/youtube-downloader.git
+git remote add origin https://github.com/ahmadbinabduljabbar/youtube-downloader.git
 git push -u origin main
 ```
 
